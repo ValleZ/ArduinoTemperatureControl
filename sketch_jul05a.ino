@@ -1,21 +1,53 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
+#include <CurieBLE.h>
+
 #define ONE_WIRE_BUS 2
+#define RELAY_PIN 4
 
 OneWire ourWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&ourWire);
+BLEService bleService("19B10010-E8F2-537E-4F6C-D104768A1214");
+BLEFloatCharacteristic temperatureCharacteristic("19B10011-E8F2-537E-4F6C-D104768A1214", BLERead | BLENotify);
+BLECharCharacteristic relayCharacteristic("19B10012-E8F2-537E-4F6C-D104768A1214", BLEWrite | BLERead | BLENotify); 
+bool relayOn;
 
 void setup() {
   Serial.begin(9600);
-  Serial.println("Start");
+  Serial.println("Init temperature sensor");
   sensors.begin();
-  setPrecisionForAllSensors(10);
+  setPrecisionForAllSensors(11);
   /*
    * 9 bit 0.5 degrees C 93.75 mSec
 10 bit  0.25 degrees C  187.5 mSec
 11 bit  0.125 degrees C 375 mSec
 12 bit  0.0625 degrees C  750 mSec
    */
+  pinMode(LED_BUILTIN, OUTPUT);
+  pinMode(RELAY_PIN, OUTPUT);
+  setRelay(false);
+  Serial.println("Init BLE");
+  BLE.begin();
+  BLE.setLocalName("Tempc");
+  BLE.setAdvertisedService(bleService);
+  bleService.addCharacteristic(temperatureCharacteristic);
+  bleService.addCharacteristic(relayCharacteristic);
+  BLE.addService(bleService);
+  temperatureCharacteristic.setValue(0.0);
+  relayCharacteristic.setValue(0);
+  BLE.advertise();
+  Serial.println("Bluetooth device active, waiting for connections...");
+}
+
+void setRelay(bool on) {
+  relayOn = on;
+  digitalWrite(LED_BUILTIN, on ? HIGH : LOW);
+  digitalWrite(RELAY_PIN, on ? HIGH : LOW);
+  if(on) {
+    Serial.println("relay on");
+  } else {
+    Serial.println("relay off");
+  }
 }
 
 void setPrecisionForAllSensors(byte precision) {
@@ -44,9 +76,20 @@ void setPrecisionForAllSensors(byte precision) {
 
 
 void loop() {
+  BLE.poll();
   sensors.requestTemperatures(); // Send the command to get temperatures
-  Serial.print(sensors.getTempCByIndex(0));
-  Serial.println(" C");
-  delay(5000);
+  float temperature = sensors.getTempCByIndex(0);
+  
+  if(temperatureCharacteristic.value() != temperature) {
+    Serial.print(temperature);
+    Serial.println(" C");
+    temperatureCharacteristic.setValue(temperature);
+    
+  }
+
+  if (relayCharacteristic.written()) {
+      setRelay(relayCharacteristic.value());
+  }
+  
 }
 
