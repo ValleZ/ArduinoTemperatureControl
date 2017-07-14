@@ -1,22 +1,66 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <CurieBLE.h>
+#include "CurieTimerOne.h"
 
 #define ONE_WIRE_BUS 2
 #define RELAY_PIN 4
+
 
 OneWire ourWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&ourWire);
 BLEService bleService("19B10010-E8F2-537E-4F6C-D104768A1214");
 BLEFloatCharacteristic temperatureCharacteristic("19B10011-E8F2-537E-4F6C-D104768A1214", BLERead | BLENotify);
-BLECharCharacteristic relayCharacteristic("19B10012-E8F2-537E-4F6C-D104768A1214", BLEWrite | BLERead | BLENotify); 
+BLECharCharacteristic relayCharacteristic("19B10012-E8F2-537E-4F6C-D104768A1214", BLERead | BLENotify); 
 bool relayOn;
+float temperature;
+float prevErrorP = -1000;
+float desiredTemperature = 45;
+float T = 100.0;
+float KP = 0.5;
+float KI = 1.0/T;
+float KD = 2.5*T/40;
+float errorP = 0;
+float errorI = 0;
+float errorD = 0;
+float control = 0;
+
+void timeTick() {
+  errorP = desiredTemperature - temperature;
+  errorI += errorP;
+  errorD = prevErrorP>-1000 ? errorP - prevErrorP : 0;
+  prevErrorP = errorP;
+  control = KP*errorP + KI*errorI + KD*errorD;
+  if (control>1) {
+    setRelay(true);
+  } else if(control<0) {
+    setRelay(false);
+  }
+
+  Serial.print(temperature);
+  Serial.print(", P ");
+  Serial.print(errorP);
+  Serial.print(", KP*errorP ");
+  Serial.print(KP*errorP);
+  Serial.print(", I ");
+  Serial.print(errorI);
+  Serial.print(", KI*errorI ");
+  Serial.print(KI*errorI);
+  Serial.print(", D ");
+  Serial.print(errorD);
+  Serial.print(", KD*errorD ");
+  Serial.print(KD*errorD);
+  Serial.print(", control ");
+  Serial.print(control);
+  Serial.print(", relay ");
+  Serial.println(relayOn);
+}
 
 void setup() {
   Serial.begin(9600);
   Serial.println("Init temperature sensor");
   sensors.begin();
-  setPrecisionForAllSensors(11);
+  setPrecisionForAllSensors(12);
   /*
    * 9 bit 0.5 degrees C 93.75 mSec
 10 bit  0.25 degrees C  187.5 mSec
@@ -25,6 +69,11 @@ void setup() {
    */
   pinMode(LED_BUILTIN, OUTPUT);
   pinMode(RELAY_PIN, OUTPUT);
+  errorI = 0;
+  prevErrorP = -1000;
+  
+  temperature = desiredTemperature;
+  relayOn = true;
   setRelay(false);
   Serial.println("Init BLE");
   BLE.begin();
@@ -36,26 +85,30 @@ void setup() {
   temperatureCharacteristic.setValue(0.0);
   relayCharacteristic.setValue(0);
   BLE.advertise();
-  Serial.println("Bluetooth device active, waiting for connections...");
+  Serial.println("Bluetooth device active");
+  CurieTimerOne.start(30000000, &timeTick);//once in 30 seconds
+  Serial.println("Timer started.");
 }
 
 void setRelay(bool on) {
-  relayOn = on;
-  digitalWrite(LED_BUILTIN, on ? HIGH : LOW);
-  digitalWrite(RELAY_PIN, on ? HIGH : LOW);
-  if(on) {
-    Serial.println("relay on");
-  } else {
-    Serial.println("relay off");
+  if(relayOn!=on){
+    relayOn = on;
+    digitalWrite(LED_BUILTIN, on ? HIGH : LOW);
+    digitalWrite(RELAY_PIN, on ? LOW : HIGH);
+    if(on) {
+      Serial.println("relay on");
+    } else {
+      Serial.println("relay off");
+    }
   }
 }
 
 void setPrecisionForAllSensors(byte precision) {
   byte i;
   byte addr[8];
-  Serial.print("Looking for 1-Wire devices...\n\r");// "\n\r" is NewLine 
+  Serial.println("Looking for 1-Wire devices...");
   while(ourWire.search(addr)) {
-    Serial.print("\n\r\n\rFound \'1-Wire\' device with address:\n\r");
+    Serial.println("Found \'1-Wire\' device with address:");
     for( i = 0; i < 8; i++) {
       if (addr[i] < 16) {
         Serial.print('0');
@@ -71,25 +124,23 @@ void setPrecisionForAllSensors(byte precision) {
   Serial.println();
   Serial.println("Done");
   ourWire.reset_search();
-  return;
 }
 
 
 void loop() {
   BLE.poll();
   sensors.requestTemperatures(); // Send the command to get temperatures
-  float temperature = sensors.getTempCByIndex(0);
-  
+  temperature = sensors.getTempCByIndex(0);
+ 
   if(temperatureCharacteristic.value() != temperature) {
-    Serial.print(temperature);
-    Serial.println(" C");
     temperatureCharacteristic.setValue(temperature);
-    
   }
 
-  if (relayCharacteristic.written()) {
-      setRelay(relayCharacteristic.value());
-  }
+//  if (relayCharacteristic.written()) {
+//      setRelay(relayCharacteristic.value());
+//  }
   
+  //delay(1000);
+ 
 }
 
