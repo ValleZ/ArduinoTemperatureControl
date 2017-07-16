@@ -5,6 +5,7 @@
 
 #define ONE_WIRE_BUS 2
 #define RELAY_PIN 4
+#define PWM_TICKS_COUNT 5
 
 
 OneWire ourWire(ONE_WIRE_BUS);
@@ -15,27 +16,46 @@ BLECharCharacteristic relayCharacteristic("19B10012-E8F2-537E-4F6C-D104768A1214"
 bool relayOn;
 float temperature;
 float prevErrorP = -1000;
+float prevErrorD = 0;
 float desiredTemperature = 45;
-float T = 100.0;
+float T = 150.0;
 float KP = 0.5;
 float KI = 1.0/T;
-float KD = 2.5*T/40;
+float KD = 2*T/40;
 float errorP = 0;
 float errorI = 0;
 float errorD = 0;
 float control = 0;
+int ticks = 0;
+int heatQuants = 0;
 
-void timeTick() {
-  errorP = desiredTemperature - temperature;
-  errorI += errorP;
-  errorD = prevErrorP>-1000 ? errorP - prevErrorP : 0;
-  prevErrorP = errorP;
-  control = KP*errorP + KI*errorI + KD*errorD;
-  if (control>1) {
+void freqTick() {
+  if(ticks%PWM_TICKS_COUNT==0){
+    controlTick();
+  }
+  ticks++;
+  if(heatQuants>0){
+    heatQuants--;
     setRelay(true);
-  } else if(control<0) {
+  } else {
     setRelay(false);
   }
+}
+
+void controlTick() {
+  errorP = desiredTemperature - temperature;
+  if(abs(errorP)<2) {
+    if(abs(KI*(errorI+errorP))<1.1) {
+      errorI += errorP;
+    }
+  } else {
+    errorI = 0;
+  }
+  errorD = ((prevErrorP>-1000 ? errorP - prevErrorP : 0)+prevErrorD)/2;
+  prevErrorP = errorP;
+  prevErrorD = errorD;
+  control = KP*errorP + KI*errorI + KD*errorD;
+  heatQuants = min(PWM_TICKS_COUNT, max(0, PWM_TICKS_COUNT*control));
 
   Serial.print(temperature);
   Serial.print(", P ");
@@ -52,8 +72,8 @@ void timeTick() {
   Serial.print(KD*errorD);
   Serial.print(", control ");
   Serial.print(control);
-  Serial.print(", relay ");
-  Serial.println(relayOn);
+  Serial.print(", hq ");
+  Serial.println(heatQuants);
 }
 
 void setup() {
@@ -71,6 +91,8 @@ void setup() {
   pinMode(RELAY_PIN, OUTPUT);
   errorI = 0;
   prevErrorP = -1000;
+  prevErrorD = 0;
+  heatQuants = 0;
   
   temperature = desiredTemperature;
   relayOn = true;
@@ -86,7 +108,7 @@ void setup() {
   relayCharacteristic.setValue(0);
   BLE.advertise();
   Serial.println("Bluetooth device active");
-  CurieTimerOne.start(30000000, &timeTick);//once in 30 seconds
+  CurieTimerOne.start(30000000/PWM_TICKS_COUNT, &freqTick);//once in 30 seconds
   Serial.println("Timer started.");
 }
 
@@ -95,11 +117,6 @@ void setRelay(bool on) {
     relayOn = on;
     digitalWrite(LED_BUILTIN, on ? HIGH : LOW);
     digitalWrite(RELAY_PIN, on ? LOW : HIGH);
-    if(on) {
-      Serial.println("relay on");
-    } else {
-      Serial.println("relay off");
-    }
   }
 }
 
