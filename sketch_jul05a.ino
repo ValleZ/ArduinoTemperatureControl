@@ -11,8 +11,8 @@
 OneWire ourWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&ourWire);
 BLEService bleService("19B10010-E8F2-537E-4F6C-D104768A1214");
-BLEFloatCharacteristic temperatureCharacteristic("19B10011-E8F2-537E-4F6C-D104768A1214", BLEWrite | BLERead | BLENotify);
-BLECharCharacteristic relayCharacteristic("19B10012-E8F2-537E-4F6C-D104768A1214", BLERead | BLENotify);
+BLEFloatCharacteristic stateCharacteristic("19B10011-E8F2-537E-4F6C-D104768A1214", BLERead | BLENotify);
+BLEFloatCharacteristic temperatureCharacteristic("19B10012-E8F2-537E-4F6C-D104768A1214", BLERead | BLEWrite);
 bool relayOn;
 float temperature;
 float prevErrorP = -1000;
@@ -101,11 +101,11 @@ void setup() {
   BLE.begin();
   BLE.setLocalName("Tempc");
   BLE.setAdvertisedService(bleService);
+  bleService.addCharacteristic(stateCharacteristic);
   bleService.addCharacteristic(temperatureCharacteristic);
-  bleService.addCharacteristic(relayCharacteristic);
   BLE.addService(bleService);
-  temperatureCharacteristic.setValue(0.0);
-  relayCharacteristic.setValue(0);
+  stateCharacteristic.setValue(0.0);
+  temperatureCharacteristic.setValue(desiredTemperature);
   BLE.advertise();
   Serial.println("Bluetooth device active");
   CurieTimerOne.start(30000000 / PWM_TICKS_COUNT, &freqTick); //once in 30 seconds
@@ -149,8 +149,8 @@ void loop() {
   sensors.requestTemperatures(); // Send the command to get temperatures
   temperature = sensors.getTempCByIndex(0);
 
-  if (temperatureCharacteristic.value() != temperature) {
-    temperatureCharacteristic.setValue(temperature);
+  if (stateCharacteristic.value() != temperature) {
+    stateCharacteristic.setValue(temperature);
   }
 
   if (temperatureCharacteristic.written()) {
@@ -163,10 +163,9 @@ void loop() {
       Serial.print("Requested temperature is invalid: ");
       Serial.println(requestedTemperature);
     }
-    setRelay(temperatureCharacteristic.value());
   }
-
-  //delay(1000);
-
+  if (temperatureCharacteristic.value() != desiredTemperature) {
+    temperatureCharacteristic.setValue(desiredTemperature);
+  }
 }
 
