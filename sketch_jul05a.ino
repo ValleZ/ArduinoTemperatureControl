@@ -104,7 +104,7 @@ void setup() {
   bleService.addCharacteristic(stateCharacteristic);
   bleService.addCharacteristic(temperatureCharacteristic);
   BLE.addService(bleService);
-  stateCharacteristic.setValue(0.0);
+  stateCharacteristic.setValue(-274);
   temperatureCharacteristic.setValue(desiredTemperature);
   BLE.advertise();
   Serial.println("Bluetooth device active");

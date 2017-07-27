@@ -29,6 +29,7 @@ import java.util.concurrent.TimeUnit;
 import static android.bluetooth.BluetoothAdapter.STATE_CONNECTED;
 import static android.bluetooth.BluetoothGatt.GATT_SUCCESS;
 import static android.bluetooth.le.ScanSettings.CALLBACK_TYPE_MATCH_LOST;
+import static ru.valle.arduino.tempcontrol.MainActivity.MIN_TEMPERATURE;
 
 final class ArduinoStateListener extends Loader<ArduinoState> {
     private static final String TAG = "ArduinoStateListener";
@@ -39,8 +40,9 @@ final class ArduinoStateListener extends Loader<ArduinoState> {
     private BluetoothGatt gatt;
     private BluetoothGattCharacteristic stateCharacteristic, setTemperatureCharacteristic;
     private boolean scanning;
-    private float temperature = -1;
-    private float desiredTemperature = -1;
+    private float temperature = Float.MIN_VALUE;
+    private float desiredTemperature = Float.MIN_VALUE;
+    private boolean shouldSendDesiredTemperature;
     private long desiredTemperatureReadTs;
     private static final Handler handler = new Handler(Looper.getMainLooper());
     private final ScanCallback scanCallback = new ScanCallback() {
@@ -73,7 +75,6 @@ final class ArduinoStateListener extends Loader<ArduinoState> {
                     deliverResult(new ArduinoState("Scan failed, errorCode " + errorCode));
                 }
             });
-
         }
     };
 
@@ -109,7 +110,7 @@ final class ArduinoStateListener extends Loader<ArduinoState> {
                             deliverResult(new ArduinoState("Reading"));
                             ArduinoStateListener.this.stateCharacteristic = gattService.getCharacteristic(STATE_CHARACTERISTIC_UUID);
                             ArduinoStateListener.this.setTemperatureCharacteristic = gattService.getCharacteristic(SET_TEMPERATURE_CHARACTERISTIC_UUID);
-                            readTemperature();
+                            dataTransmit();
                         }
 
                     }
@@ -139,14 +140,29 @@ final class ArduinoStateListener extends Loader<ArduinoState> {
                                 Log.w(TAG, "stateCharacteristic has no value");
                             }
                         }
-                        handler.postDelayed(readTemperatureCallback, 1000);
+                        handler.postDelayed(dataTransmitCallback, 5000);
                     }
                 }
             });
         }
 
         @Override
-        public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
+        public void onCharacteristicWrite(BluetoothGatt gatt, final BluetoothGattCharacteristic characteristic, final int status) {
+            handler.post(new Runnable() {
+                @Override
+
+                public void run() {
+                    if (!isAbandoned() && !isReset()) {
+                        if (status == GATT_SUCCESS) {
+                            shouldSendDesiredTemperature = false;
+                            Log.d(TAG, "write successful");
+                            dataTransmit();
+                        } else {
+                            handler.postDelayed(dataTransmitCallback, 5000);
+                        }
+                    }
+                }
+            });
         }
 
         @Override
@@ -169,10 +185,10 @@ final class ArduinoStateListener extends Loader<ArduinoState> {
         }
     };
 
-    private Runnable readTemperatureCallback = new Runnable() {
+    private Runnable dataTransmitCallback = new Runnable() {
         @Override
         public void run() {
-            readTemperature();
+            dataTransmit();
         }
     };
 
@@ -208,8 +224,8 @@ final class ArduinoStateListener extends Loader<ArduinoState> {
         }
         handler.removeCallbacks(connectGattCallback);
         handler.removeCallbacks(discoverServicesCallback);
-        handler.removeCallbacks(readTemperatureCallback);
-        desiredTemperature = temperature = -1;
+        handler.removeCallbacks(dataTransmitCallback);
+        temperature = Float.MIN_VALUE;
         desiredTemperatureReadTs = SystemClock.elapsedRealtime();
     }
 
@@ -221,6 +237,9 @@ final class ArduinoStateListener extends Loader<ArduinoState> {
     }
 
     private void connectGatt() {
+        shouldSendDesiredTemperature = false;
+        desiredTemperature = MIN_TEMPERATURE;
+        temperature = MIN_TEMPERATURE;
         if (arduino != null) {
             if (!isAbandoned() && !isReset()) {
                 deliverResult(new ArduinoState("Connecting to " + arduino.getAddress()));
@@ -246,9 +265,16 @@ final class ArduinoStateListener extends Loader<ArduinoState> {
         }
     }
 
-    private void readTemperature() {
+    private void dataTransmit() {
         if (!isAbandoned() && !isReset() && gatt != null && stateCharacteristic != null) {
-            if (desiredTemperature < 0 || SystemClock.elapsedRealtime() - desiredTemperatureReadTs > TimeUnit.MINUTES.toMillis(10)) {
+            if (shouldSendDesiredTemperature) {
+                byte[] temperatureBytes = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putFloat(desiredTemperature).array();
+                setTemperatureCharacteristic.setValue(temperatureBytes);
+                if (!gatt.writeCharacteristic(setTemperatureCharacteristic)) {
+                    Log.w(TAG, "setTemperatureCharacteristic write refused");
+                }
+            } else if (desiredTemperature < 0 || SystemClock.elapsedRealtime() - desiredTemperatureReadTs > TimeUnit.MINUTES.toMillis(10)) {
+                desiredTemperatureReadTs = SystemClock.elapsedRealtime();
                 if (!gatt.readCharacteristic(setTemperatureCharacteristic)) {
                     Log.w(TAG, "setTemperatureCharacteristic read refused");
                 }
@@ -259,4 +285,10 @@ final class ArduinoStateListener extends Loader<ArduinoState> {
             Log.w(TAG, "don't read temp from " + stateCharacteristic);
         }
     }
+
+    void sendDesiredTemperature(float value) {
+        desiredTemperature = value;
+        shouldSendDesiredTemperature = true;
+    }
 }
+
