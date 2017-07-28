@@ -153,7 +153,6 @@ public final class MainActivity extends AppCompatActivity implements LoaderManag
                 approxTimespanMinutes = 1;
             }
             double maxx = approxTimespanMinutes;
-            graph.getViewport().setMinX(0);
             graph.getViewport().setMaxX(maxx);
             double x = maxx;
             for (int i = 0, p = state.position; i < state.count; i++, p--) {
@@ -161,8 +160,9 @@ public final class MainActivity extends AppCompatActivity implements LoaderManag
                     p = state.temperatures.length - 1;
                 }
                 points[p] = new Point((float) x, state.temperatures[p]);
-                x -= (state.deltaSeconds[p] & 0xff) / 60.0;
+                x -= state.deltaSeconds[p] / 60.0;
             }
+            graph.getViewport().setMinX(x);
             LineGraphSeries<Point> series = new LineGraphSeries<>(points);
             graph.addSeries(series);
             Point[] dpoints = new Point[2];

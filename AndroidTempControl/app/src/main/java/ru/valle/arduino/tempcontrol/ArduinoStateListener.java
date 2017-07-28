@@ -293,16 +293,16 @@ final class ArduinoStateListener extends Loader<ArduinoState> {
 
     private long lastTs;
     private int pos, count;
-    private static final int DATA_POINTS = 200;
-    private byte[] deltaSeconds = new byte[DATA_POINTS];
+    private static final int DATA_POINTS = 400;
+    private float[] deltaSeconds = new float[DATA_POINTS];
     private float[] temp = new float[DATA_POINTS];
 
     private void onTemperatureRead(float temperature, float desiredTemperature) {
         if (temperature > MIN_TEMPERATURE) {
             long time = SystemClock.elapsedRealtime();
-            long diffSeconds = Math.round(lastTs == 0 ? 0 : (time - lastTs) / 1_000.0);
-            byte timeDiffSeconds = (byte) (diffSeconds > 255 ? 255 : diffSeconds);
-            deltaSeconds[pos] = timeDiffSeconds;
+            double diffSeconds = lastTs == 0 ? 0 : (time - lastTs) / 1_000.0;
+            double timeDiffSeconds = diffSeconds > 255 ? 255 : diffSeconds;
+            deltaSeconds[pos] = (float) timeDiffSeconds;
             temp[pos] = temperature;
             count++;
             if (count >= DATA_POINTS) {

@@ -5,11 +5,11 @@ import static ru.valle.arduino.tempcontrol.MainActivity.MIN_TEMPERATURE;
 final class ArduinoState {
     final String message;
     final float desiredTemperature;
-    final byte[] deltaSeconds;
+    final float[] deltaSeconds;
     final float[] temperatures;
     final int position, count;
 
-    public ArduinoState(int position, int count, float[] temperatures, byte[] deltaSeconds, float desiredTemperature) {
+    public ArduinoState(int position, int count, float[] temperatures, float[] deltaSeconds, float desiredTemperature) {
         this(position, count, temperatures, deltaSeconds, desiredTemperature, null);
     }
 
@@ -18,7 +18,7 @@ final class ArduinoState {
 
     }
 
-    public ArduinoState(int position, int count, float[] temperatures, byte[] deltaSeconds, float desiredTemperature, String errorMessage) {
+    public ArduinoState(int position, int count, float[] temperatures, float[] deltaSeconds, float desiredTemperature, String errorMessage) {
         this.position = position;
         this.count = count;
         this.temperatures = temperatures;
