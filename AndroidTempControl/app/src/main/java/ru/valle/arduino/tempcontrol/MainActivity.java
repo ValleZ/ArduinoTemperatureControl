@@ -17,6 +17,7 @@ import android.widget.TextView;
 
 import com.jjoe64.graphview.GraphView;
 import com.jjoe64.graphview.series.DataPoint;
+import com.jjoe64.graphview.series.DataPointInterface;
 import com.jjoe64.graphview.series.LineGraphSeries;
 
 import static android.content.pm.PackageManager.PERMISSION_GRANTED;
@@ -28,9 +29,6 @@ public final class MainActivity extends AppCompatActivity implements LoaderManag
     private TextView tempView;
     private View setTargetButton;
     private GraphView graph;
-    private LineGraphSeries<DataPoint> series;
-    private double graphX;
-    private long lastTs;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -67,10 +65,6 @@ public final class MainActivity extends AppCompatActivity implements LoaderManag
         graph.getViewport().setMinX(0);
         graph.getViewport().setMaxX(60);
         graph.getGridLabelRenderer().setLabelVerticalWidth(100);
-        series = new LineGraphSeries<>();
-        series.setDrawBackground(false);
-        series.setDrawDataPoints(false);
-        graph.addSeries(series);
         graph.setVisibility(View.INVISIBLE);
         start();
     }
@@ -116,25 +110,68 @@ public final class MainActivity extends AppCompatActivity implements LoaderManag
             tempView.setText(state.message);
             setTargetButton.setVisibility(View.GONE);
         } else {
-            Log.d(TAG, "temp " + state.temperature);
             graph.setVisibility(View.VISIBLE);
-            if (state.desiredTemperature > MIN_TEMPERATURE && state.temperature > MIN_TEMPERATURE) {
+            if (state.desiredTemperature > MIN_TEMPERATURE && state.getTemperature() > MIN_TEMPERATURE) {
                 setTargetButton.setVisibility(View.VISIBLE);
-                tempView.setText(String.format("%s/%s C", state.temperature, state.desiredTemperature));
-                addPoint(state);
-            } else if (state.temperature > MIN_TEMPERATURE) {
-                tempView.setText(String.format("%s C", state.temperature));
-                addPoint(state);
+                tempView.setText(String.format("%s/%s C", state.getTemperature(), state.desiredTemperature));
+                show(state);
+            } else if (state.getTemperature() > MIN_TEMPERATURE) {
+                tempView.setText(String.format("%s C", state.getTemperature()));
+                show(state);
             }
         }
     }
 
-    private void addPoint(ArduinoState state) {
-        long time = SystemClock.elapsedRealtime();
-        double timeDiffMinutes = lastTs == 0 ? 0 : (time - lastTs) / 60_000.0;
-        lastTs = time;
-        graphX += timeDiffMinutes;
-        series.appendData(new DataPoint(graphX, state.temperature), false, 1000);
+    private static class Point implements DataPointInterface {
+        private final float x;
+        private final float value;
+
+        Point(float x, float value) {
+            this.x = x;
+            this.value = value;
+        }
+
+        @Override
+        public double getX() {
+            return x;
+        }
+
+        @Override
+        public double getY() {
+            return value;
+        }
+    }
+
+    private void show(ArduinoState state) {
+        graph.removeAllSeries();
+        if (state.temperatures != null && state.count > 1) {
+            Point[] points = new Point[state.count];
+            double approxTimespanMinutes = state.deltaSeconds[state.position] * state.count / 60;
+            if (approxTimespanMinutes > 60) {
+                approxTimespanMinutes = 60;
+            } else if (approxTimespanMinutes < 1) {
+                approxTimespanMinutes = 1;
+            }
+            double maxx = approxTimespanMinutes;
+            graph.getViewport().setMinX(0);
+            graph.getViewport().setMaxX(maxx);
+            double x = maxx;
+            for (int i = 0, p = state.position; i < state.count; i++, p--) {
+                if (p < 0) {
+                    p = state.temperatures.length - 1;
+                }
+                points[p] = new Point((float) x, state.temperatures[p]);
+                x -= (state.deltaSeconds[p] & 0xff) / 60.0;
+            }
+            LineGraphSeries<Point> series = new LineGraphSeries<>(points);
+            graph.addSeries(series);
+            Point[] dpoints = new Point[2];
+            dpoints[0] = new Point(0, state.desiredTemperature);
+            dpoints[1] = new Point((float) maxx, state.desiredTemperature);
+            LineGraphSeries<Point> desiredSeries = new LineGraphSeries<>(dpoints);
+            desiredSeries.setColor(0xFFB22222);
+            graph.addSeries(desiredSeries);
+        }
     }
 
     @Override
@@ -142,3 +179,4 @@ public final class MainActivity extends AppCompatActivity implements LoaderManag
         tempView.setText("");
     }
 }
+

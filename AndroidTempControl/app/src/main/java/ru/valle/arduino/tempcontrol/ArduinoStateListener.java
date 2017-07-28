@@ -135,7 +135,7 @@ final class ArduinoStateListener extends Loader<ArduinoState> {
                                 } else if (characteristic.getUuid().equals(SET_TEMPERATURE_CHARACTERISTIC_UUID)) {
                                     desiredTemperature = ByteBuffer.wrap(value).order(ByteOrder.LITTLE_ENDIAN).getFloat();
                                 }
-                                ArduinoStateListener.this.deliverResult(new ArduinoState(temperature, desiredTemperature));
+                                onTemperatureRead(temperature, desiredTemperature);
                             } else {
                                 Log.w(TAG, "stateCharacteristic has no value");
                             }
@@ -290,5 +290,32 @@ final class ArduinoStateListener extends Loader<ArduinoState> {
         desiredTemperature = value;
         shouldSendDesiredTemperature = true;
     }
+
+    private long lastTs;
+    private int pos, count;
+    private static final int DATA_POINTS = 200;
+    private byte[] deltaSeconds = new byte[DATA_POINTS];
+    private float[] temp = new float[DATA_POINTS];
+
+    private void onTemperatureRead(float temperature, float desiredTemperature) {
+        if (temperature > MIN_TEMPERATURE) {
+            long time = SystemClock.elapsedRealtime();
+            long diffSeconds = Math.round(lastTs == 0 ? 0 : (time - lastTs) / 1_000.0);
+            byte timeDiffSeconds = (byte) (diffSeconds > 255 ? 255 : diffSeconds);
+            deltaSeconds[pos] = timeDiffSeconds;
+            temp[pos] = temperature;
+            count++;
+            if (count >= DATA_POINTS) {
+                count = DATA_POINTS;
+            }
+            ArduinoStateListener.this.deliverResult(new ArduinoState(pos, count, temp, deltaSeconds, desiredTemperature));
+            pos++;
+            if (pos >= DATA_POINTS) {
+                pos = 0;
+            }
+            lastTs = time;
+        }
+    }
+
 }
 
