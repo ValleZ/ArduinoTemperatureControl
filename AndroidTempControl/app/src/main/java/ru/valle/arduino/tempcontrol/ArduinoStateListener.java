@@ -202,7 +202,16 @@ final class ArduinoStateListener extends Loader<ArduinoState> {
         if (scanner == null) {
             BluetoothManager bluetoothManager = (BluetoothManager) getContext().getSystemService(Context.BLUETOOTH_SERVICE);
             BluetoothAdapter bluetoothAdapter = bluetoothManager.getAdapter();
+            if (!bluetoothAdapter.isEnabled()) {
+                deliverResult(new ArduinoState("Enabling BT..."));
+                if (!bluetoothAdapter.enable()) {
+                    deliverResult(new ArduinoState("Enabling BT failed"));
+                }
+            }
             scanner = bluetoothAdapter.getBluetoothLeScanner();
+            if (scanner == null) {
+                deliverResult(new ArduinoState("Cannot get LE scanner"));
+            }
         }
         if (arduino == null && scanner != null) {
             ScanFilter filter = new ScanFilter.Builder().setDeviceName("Tempc").build();
